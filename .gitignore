@@ -1,0 +1,37 @@
+# --- secretos ---------------------------------------------------------------
+# La API key de la cuenta que paga los analisis. NUNCA al repo.
+.env
+
+# --- entorno ----------------------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+
+# --- binarios pesados (no entran en GitHub: el limite por archivo son 100 MB) -
+# ffmpeg.exe y ffprobe.exe pesan 164 MB cada uno. Se bajan aparte, ver README.
+tools/
+
+# --- material de video ------------------------------------------------------
+# Los streams crudos son de 12 GB cada uno.
+*.mp4
+*.mkv
+*.mov
+*.webm
+
+# Intermedios y resultados por proyecto (se regeneran solos).
+trabajo/
+salida/
+
+# --- modelos ----------------------------------------------------------------
+# Pesos de modelos: se bajan solos la primera vez que corren.
+*.pt
+*.onnx
+*.bin
+
+# --- sobras -----------------------------------------------------------------
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+.vs/
+.idea/

@@ -1,0 +1,15 @@
+# Interfaz y servidor local
+fastapi
+uvicorn[standard]
+
+# Transcripcion en GPU (usa el torch del sistema via --system-site-packages)
+faster-whisper
+silero-vad
+
+# Eleccion de los momentos
+anthropic
+pydantic
+
+# Utilidades
+numpy
+fonttools

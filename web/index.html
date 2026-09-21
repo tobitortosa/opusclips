@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Máquina de clips</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>Máquina de clips</h1>
+  <div id="cuenta" class="cuenta"></div>
+</header>
+
+<main>
+
+  <!-- ══════════════════════════ CONFIGURAR ══════════════════════════ -->
+  <section id="paso-config" class="tarjeta">
+    <div id="alertas"></div>
+
+    <div class="campo">
+      <label class="etiqueta" for="pantalla">Video del gameplay <b class="req">obligatorio</b></label>
+      <div class="fila">
+        <input id="pantalla" type="text" placeholder="Elegí el archivo o pegá la ruta...">
+        <button id="btn-elegir" class="secundario">Buscar...</button>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label class="etiqueta" for="camara">Video de la cámara <b class="opc">opcional</b></label>
+      <div class="fila">
+        <input id="camara" type="text" placeholder="Si lo dejás vacío, el clip sale solo con gameplay">
+        <button id="btn-elegir-cam" class="secundario">Buscar...</button>
+      </div>
+      <small id="pista-camara" class="pista"></small>
+    </div>
+
+    <div id="recientes" class="recientes"></div>
+
+    <div class="fila-opciones">
+      <label class="campo chico">
+        <span class="etiqueta">¿Cuántos clips querés?</span>
+        <div class="slider-fila">
+          <input id="n-clips" type="range" min="1" max="20" value="10">
+          <output id="n-clips-val">10</output>
+        </div>
+      </label>
+
+      <label class="campo chico">
+        <span class="etiqueta">Estilo de subtítulos</span>
+        <select id="estilo">
+          <option value="anton">Anton — condensada, alto impacto</option>
+          <option value="montserrat">Montserrat — el look de Opus Clip</option>
+          <option value="poppins">Poppins — redondeada</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="check">
+      <input id="silencios" type="checkbox" checked>
+      <span>
+        <b>Sacar los tiempos muertos</b>
+        <small>Corta las pausas donde no hablás, con un micro-fundido en cada corte
+          para que el audio del juego no pegue saltos.</small>
+      </span>
+    </label>
+
+    <div class="campo" id="fila-nivel">
+      <label class="etiqueta" for="nivel">Qué tan frenético</label>
+      <div class="opciones-nivel">
+        <label><input type="radio" name="nivel" value="suave"><span>Suave</span>
+          <small>Solo pausas largas.</small></label>
+        <label><input type="radio" name="nivel" value="normal"><span>Normal</span>
+          <small>Equilibrado.</small></label>
+        <label><input type="radio" name="nivel" value="frenetico"><span>Frenético</span>
+          <small>Corta desde un cuarto de segundo.</small></label>
+        <label><input type="radio" name="nivel" value="maximo" checked><span>Sin respiro</span>
+          <small>Pega solo lo que hablás, corta hasta las pausas dentro de una
+            frase, y mueve el encuadre. El clip queda mucho más corto.</small></label>
+      </div>
+    </div>
+
+    <label class="check">
+      <input id="gancho" type="checkbox" checked>
+      <span>
+        <b>Empezar con un adelanto (cold open)</b>
+        <small>La IA lee el clip y elige el fragmento que mejor frena el scroll —una
+          reacción, una risa, una frase que se malpiensa— y lo pega al principio, antes
+          de que el clip arranque. Dura 2 a 3 segundos: lo suficiente para entenderlo.</small>
+      </span>
+    </label>
+
+    <button id="btn-generar" class="principal">Generar clips</button>
+    <p class="nota">Todo se procesa en tu máquina. Lo único que sale a internet es el texto
+      de la transcripción, para que la IA elija los mejores momentos (≈10 centavos por stream).</p>
+  </section>
+
+  <!-- ══════════════════════════ PROGRESO ══════════════════════════ -->
+  <section id="paso-progreso" class="tarjeta oculto">
+    <div class="barra"><div id="barra-relleno"></div></div>
+    <div class="progreso-info">
+      <span id="mensaje">Arrancando...</span>
+      <span id="porcentaje">0%</span>
+    </div>
+    <ul id="etapas" class="etapas"></ul>
+    <div id="datos-stream" class="datos"></div>
+    <button id="btn-cancelar" class="secundario chico">Cancelar</button>
+  </section>
+
+  <!-- ══════════════════════════ RESULTADOS ══════════════════════════ -->
+  <section id="paso-clips" class="oculto">
+    <div class="encabezado-clips">
+      <h2 id="titulo-clips">Tus clips</h2>
+      <div>
+        <button id="btn-carpeta" class="secundario chico">Abrir carpeta</button>
+        <button id="btn-nuevo" class="secundario chico">Otro stream</button>
+      </div>
+    </div>
+    <div id="grilla" class="grilla"></div>
+  </section>
+
+</main>
+
+<!-- ══════════════════════════ EDITOR DE SUBTÍTULOS ══════════════════════════ -->
+<div id="modal" class="modal oculto">
+  <div class="modal-caja">
+    <div class="modal-cab">
+      <h3 id="modal-titulo">Editar subtítulos</h3>
+      <button id="modal-cerrar" class="icono">✕</button>
+    </div>
+    <p class="pista">Tocá una palabra para corregirla. Las <span class="dudosa">resaltadas</span>
+      son las que la IA escuchó con poca confianza.</p>
+    <div id="editor" class="editor"></div>
+    <div class="modal-pie">
+      <span id="modal-estado" class="pista"></span>
+      <button id="btn-guardar" class="principal chico">Guardar y rehacer el clip</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
