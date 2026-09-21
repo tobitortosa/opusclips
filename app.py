@@ -30,7 +30,7 @@ class NuevoTrabajo(BaseModel):
     cortar_silencios: bool = True
     nivel_silencio: str = "maximo"
     gancho: bool = True
-    nivel_zoom: str = "llamativo"
+    nivel_zoom: str = "mediano"
 
 
 class Cues(BaseModel):

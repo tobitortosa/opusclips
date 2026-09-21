@@ -368,7 +368,7 @@ class Trabajo:
             self.pantalla, self.camara, self.estado.get("offset_camara", 0.0),
             c["inicio"], c["duracion"], ass, destino, mapa=mapa, punch_in=punch,
             zoom_gancho=zoom_g, impacto_en=impacto, nivel_zoom=self.nivel_zoom,
-            cb=cb, cancelado=lambda: self.cancelado)
+            semilla=c["n"], cb=cb, cancelado=lambda: self.cancelado)
         render.miniatura(destino, self.dir / f"{destino.stem}.jpg")
         c["estado"] = "listo"
         c["ruta"] = str(destino)

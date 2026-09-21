@@ -399,65 +399,106 @@ def test_palabras_repetidas_por_el_cold_open():
     assert out[-1]["t"] == "NO"                          # y de nuevo en el clip
 
 
-# ------------------------------------------------- vaiven de zoom (core/zoom.py)
-# El encuadre se mueve durante TODO el clip. Lo que se testea: que el zoom se
-# quede dentro del rango prometido, que no se repita, y sobre todo DONDE se
-# engancha en el filtergraph -despues del concat y antes de los subtitulos-,
-# que es de lo que depende que el texto no se agrande con la imagen.
+# --------------------------------------------- zoom a saltos (core/zoom.py)
+# El encuadre del gameplay salta entre planos, sin transicion. Lo que se testea:
+# que los saltos esten bien armados, que la expresion de ffmpeg diga lo mismo que
+# la lista de saltos, y sobre todo DONDE se engancha en el filtergraph -de eso
+# depende que la cara no se mueva y que los subtitulos no salten de tamaño-.
 
-def test_el_zoom_se_queda_en_el_rango_prometido():
+def test_los_saltos_se_quedan_en_el_rango():
     from core import zoom
     for nivel, cfg in zoom.NIVELES.items():
-        r = zoom.recorrido(nivel, segundos=60)
+        ps = zoom.pasos(nivel, 40.0, semilla=3)
         if cfg is None:
-            assert r == []
+            assert ps == []
             continue
-        assert min(r) >= 1.0 - 1e-6, f"{nivel} se aleja mas alla del plano original"
-        assert max(r) <= 1.0 + cfg["amplitud"] + 1e-6, f"{nivel} se pasa de la amplitud"
-        assert r[0] == min(r), "tiene que abrir en el plano mas abierto y entrar"
+        zs = [z for _, z in ps]
+        assert min(zs) >= 1.0 - 1e-9, f"{nivel} se aleja del plano original"
+        assert max(zs) <= 1.0 + cfg["amplitud"] + 1e-9, f"{nivel} se pasa de la amplitud"
+        assert ps[0] == (0.0, 1.0), "tiene que abrir en el plano mas abierto"
 
 
-def test_el_zoom_no_se_repite():
-    """Dos ondas en proporcion aurea: el movimiento no se repite.
-
-    Si se repitiera, se vuelve predecible y se lee como plantilla. La proporcion
-    aurea es el numero mas dificil de aproximar por una fraccion, o sea lo mas
-    lejos que se puede estar de un ciclo que vuelve. Aun asi hay CASI
-    coincidencias en los indices de Fibonacci -la mas cercana cae en el ciclo 8,
-    a los 32 segundos- y eso es irreducible: cualquier otra proporcion vuelve a
-    coincidir antes. Lo que se exige es que ninguna se acerque a menos del 5% de
-    la amplitud, que es la diferencia que ya no se percibe.
-    """
+def test_ningun_salto_repite_el_plano_anterior():
+    """Un salto al mismo plano no es un salto: es un salto que no se ve."""
     from core import zoom
-    amp = zoom.NIVELES["llamativo"]["amplitud"]
-    r = zoom.recorrido("llamativo", segundos=40)
-    c = int(zoom.NIVELES["llamativo"]["ciclo"] * 60)
-    primero = r[:c]
-    for k in range(1, len(r) // c):
-        dif = max(abs(a - b) for a, b in zip(primero, r[k * c:(k + 1) * c]))
-        assert dif > 0.05 * amp, f"el ciclo {k} repite el primero (difiere {dif:.4f})"
+    for semilla in range(6):
+        ps = zoom.pasos("mediano", 45.0, semilla=semilla)
+        assert len(ps) > 15, "45 s tienen que dar bastantes saltos"
+        for (_, a), (_, b) in zip(ps, ps[1:]):
+            assert a != b, f"dos planos iguales seguidos con semilla {semilla}"
+
+
+def test_los_saltos_no_son_un_metronomo():
+    """Tiempos parejos = el ojo anticipa el salto y deja de mirarlo."""
+    from core import zoom
+    ps = zoom.pasos("mediano", 60.0, semilla=1)
+    huecos = [b - a for (a, _), (b, _) in zip(ps, ps[1:])]
+    assert max(huecos) - min(huecos) > 0.3, "los saltos caen siempre a la misma distancia"
+
+
+def test_los_saltos_son_reproducibles():
+    """Rehacer un clip tiene que dar el mismo video, no otro montaje."""
+    from core import zoom
+    assert zoom.pasos("mediano", 30.0, semilla=4) == zoom.pasos("mediano", 30.0, semilla=4)
+    assert zoom.pasos("mediano", 30.0, semilla=4) != zoom.pasos("mediano", 30.0, semilla=5)
+
+
+def test_la_expresion_dice_lo_mismo_que_los_saltos():
+    from core import zoom
+    ps = zoom.pasos("mediano", 25.0, semilla=2)
+    e = zoom.expresion(ps)
+
+    def evaluar(expr, t):
+        while expr.startswith("if(lt(time,"):
+            resto = expr[len("if(lt(time,"):-1]
+            lim, resto = resto.split(")", 1)
+            val, resto = resto[1:].split(",", 1)
+            if t < float(lim):
+                return float(val)
+            expr = resto
+        return float(expr)
+
+    for i, (t, z) in enumerate(ps):
+        assert abs(evaluar(e, t + 0.01) - z) < 1e-6, f"el salto {i} no coincide"
+        if i:
+            assert abs(evaluar(e, t - 0.01) - ps[i - 1][1]) < 1e-6, f"antes del salto {i}"
+
+
+def test_el_zoom_toca_el_gameplay_y_no_la_camara():
+    """La parte de arriba se recorta y se re-apila SIN pasar por el zoom."""
+    from core.render import construir_filtro
+    from core.config import ALTO, ANCHO, CAM_ALTO
+    m = MapaTiempos([(0.0, 3.0), (5.0, 9.0), (12.0, 30.0)])
+    f = construir_filtro("x.ass", True, m, nivel_zoom="mediano", semilla=4)
+    cam = f[f.index("[zcam]"):f.index("[zcamr]")]
+    game = f[f.index("[zgame]c"):f.index("[zgamer]")]
+    assert "zoompan" not in cam, "la camara no se toca"
+    assert "zoompan" in game, "el gameplay si"
+    assert f"crop={ANCHO}:{CAM_ALTO}:0:0" in cam
+    assert f"crop={ANCHO}:{ALTO - CAM_ALTO}:0:{CAM_ALTO}" in game
+    assert "vstack=inputs=2[vzm]" in f, "y se vuelven a apilar"
 
 
 def test_el_zoom_va_despues_del_concat_y_antes_de_los_subtitulos():
     """El orden es lo unico que importa de verdad aca.
 
-    Si el zoom fuera ANTES del concat se reiniciaria en cada trozo (150 en modo
-    sin respiro) y seria un temblor. Si fuera DESPUES del `ass`, el texto se
-    agrandaria y achicaria con la imagen.
+    Antes del concat, el reloj del gameplay es el del stream original: un salto
+    programado para el segundo 10 caeria en cualquier lado del clip final, o se
+    perderia si ese pedazo se corto. Despues del `ass`, los subtitulos saltarian
+    de tamaño con la imagen.
     """
     from core.render import construir_filtro
-    m = MapaTiempos([(0.0, 3.0), (5.0, 9.0), (12.0, 20.0)])
-    f = construir_filtro("x.ass", True, m, nivel_zoom="llamativo")
-    assert f.index("concat=") < f.index("zoompan"), "el zoom va despues de pegar los trozos"
-    assert f.index("zoompan") < f.index("ass=x.ass"), "y antes de quemar los subtitulos"
-    # el trozo de zoom toma [vcat] y entrega [vzm], que es lo que consume el ass
-    assert "[vcat]zoompan" in f and "[vzm]ass=x.ass" in f
+    m = MapaTiempos([(0.0, 3.0), (5.0, 9.0), (12.0, 30.0)])
+    f = construir_filtro("x.ass", True, m, nivel_zoom="mediano", semilla=4)
+    assert f.index("concat=") < f.index("zoompan")
+    assert f.index("zoompan") < f.index("ass=x.ass")
+    assert "[vzm]ass=x.ass" in f
 
 
-def test_sin_cortes_el_zoom_igual_se_aplica():
+def test_sin_camara_se_zoomea_el_cuadro_entero():
     from core.render import construir_filtro
-    f = construir_filtro("x.ass", True, nivel_zoom="llamativo")
-    assert "[stack]zoompan" in f and "[vzm]ass=x.ass" in f
+    f = construir_filtro("x.ass", False, nivel_zoom="mediano", duracion=20.0, semilla=1)
+    assert "zoompan" in f and "vstack" not in f
 
 
 def test_zoom_apagado_no_deja_rastro():
@@ -469,12 +510,8 @@ def test_zoom_apagado_no_deja_rastro():
         assert "[vcat]ass=x.ass" in f, "el ass tiene que tomar directo del concat"
 
 
-def test_punch_in_y_vaiven_no_se_encinan():
-    """Los dos zooms multiplicados dan un movimiento inestable.
-
-    El punch-in se apaga solo cuando hay vaiven; ya no hace falta que el ojo
-    registre el corte, porque el encuadre nunca esta quieto.
-    """
+def test_punch_in_y_saltos_no_se_encinan():
+    """Los dos zooms multiplicados dan un movimiento inestable."""
     import inspect
     from core import pipeline
     src = inspect.getsource(pipeline.Trabajo._plan_clip)

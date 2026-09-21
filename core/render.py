@@ -57,7 +57,8 @@ def _mezcla_impacto(entrada, salida, en):
 
 
 def construir_filtro(ass_rel, con_camara, mapa=None, t0=0.0, punch_in=False,
-                     zoom_gancho=None, impacto_en=None, nivel_zoom=None):
+                     zoom_gancho=None, impacto_en=None, nivel_zoom=None,
+                     duracion=0.0, semilla=0):
     """`mapa` es un MapaTiempos si hay que sacar tiempos muertos, o None.
 
     Los cortes se aplican DESPUES de componer, sobre el video ya armado, y en el
@@ -65,9 +66,10 @@ def construir_filtro(ass_rel, con_camara, mapa=None, t0=0.0, punch_in=False,
     La cadena de audio (EQ, compresion, loudnorm) va al FINAL, sobre el audio ya
     pegado, para que el loudnorm mida el clip completo y no cada trozo suelto.
 
-    El vaiven de zoom entra entre el concat y los subtitulos: sobre el video ya
-    pegado (asi el movimiento es continuo y no se reinicia en cada trozo) y antes
-    del `ass` (asi el texto no se agranda con la imagen).
+    Los saltos de zoom entran entre el concat y los subtitulos: sobre el video ya
+    pegado -ahi el reloj ya es el del clip terminado, asi que un salto programado
+    para el segundo 10 cae de verdad en el segundo 10- y antes del `ass`, para que
+    el texto no salte de tamaño con la imagen.
     """
     base = _filtro_con_camara() if con_camara else _filtro_sin_camara()
     if mapa is not None and mapa.hay_cortes:
@@ -75,23 +77,26 @@ def construir_filtro(ass_rel, con_camara, mapa=None, t0=0.0, punch_in=False,
         if impacto_en:
             golpe = _mezcla_impacto("acat", "amez", impacto_en)
             fuente = "amez"
-        vaiven = zoom.filtro(nivel_zoom, ANCHO, ALTO, FPS, "vcat", "vzm")
+        saltos = zoom.filtro(nivel_zoom, duracion or mapa.duracion, ANCHO, ALTO,
+                             CAM_ALTO if con_camara else 0, FPS, "vcat", "vzm", semilla)
         return (base +
                 mapa.filtro_concat("stack", "0:a", "vcat", "acat", t0=t0,
                                    punch_in=punch_in, ancho=ANCHO, alto=ALTO,
                                    fps=FPS, zoom_primero=zoom_gancho) +
-                golpe + vaiven +
-                f"[{'vzm' if vaiven else 'vcat'}]ass={ass_rel}:fontsdir=fonts[vo];"
+                golpe + saltos +
+                f"[{'vzm' if saltos else 'vcat'}]ass={ass_rel}:fontsdir=fonts[vo];"
                 f"[{fuente}]{CADENA_AUDIO}[ao]")
-    vaiven = zoom.filtro(nivel_zoom, ANCHO, ALTO, FPS, "stack", "vzm")
-    return (base + vaiven +
-            f"[{'vzm' if vaiven else 'stack'}]ass={ass_rel}:fontsdir=fonts[vo];"
+    saltos = zoom.filtro(nivel_zoom, duracion, ANCHO, ALTO,
+                         CAM_ALTO if con_camara else 0, FPS, "stack", "vzm", semilla)
+    return (base + saltos +
+            f"[{'vzm' if saltos else 'stack'}]ass={ass_rel}:fontsdir=fonts[vo];"
             f"[0:a]{CADENA_AUDIO}[ao]")
 
 
 def renderizar(pantalla, camara, offset_cam, inicio, dur, ass, destino,
                cb=None, cancelado=None, crf=None, preset=None, mapa=None,
-               punch_in=False, zoom_gancho=None, impacto_en=None, nivel_zoom=None):
+               punch_in=False, zoom_gancho=None, impacto_en=None, nivel_zoom=None,
+               semilla=0):
     """Renderiza un clip.
 
     ffmpeg corre con el cwd en la carpeta del .ass y usa rutas RELATIVAS para
@@ -135,7 +140,8 @@ def renderizar(pantalla, camara, offset_cam, inicio, dur, ass, destino,
     # `-/filter_complex`, verificada contra el binario que trae el proyecto.
     filtro = construir_filtro(ass.name, con_cam, mapa, t0=inicio, punch_in=punch_in,
                               zoom_gancho=zoom_gancho, impacto_en=impacto_en,
-                              nivel_zoom=nivel_zoom)
+                              nivel_zoom=nivel_zoom, semilla=semilla,
+                              duracion=mapa.duracion if mapa is not None else dur)
     f_filtro = trabajo / f"{destino.stem}.filtro"
     f_filtro.write_text(filtro, encoding="utf-8")
 

@@ -92,19 +92,19 @@
     </label>
 
     <div class="campo" id="fila-zoom">
-      <label class="etiqueta" for="zoom">Movimiento de cámara</label>
+      <label class="etiqueta" for="zoom">Zoom sobre el gameplay</label>
+      <p class="sub-etiqueta">Salto seco, sin transición: el encuadre está en un plano
+        y de golpe está en otro. Es el golpe lo que llama la atención; una transición
+        suave lo suaviza y se pierde. Sólo se mueve el gameplay, la cámara queda quieta.</p>
       <div class="opciones-nivel">
-        <label><input type="radio" name="zoom" value="apagado"><span>Quieto</span>
+        <label><input type="radio" name="zoom" value="apagado"><span>Sin zoom</span>
           <small>Encuadre fijo.</small></label>
-        <label><input type="radio" name="zoom" value="sutil"><span>Sutil</span>
-          <small>Apenas respira.</small></label>
-        <label><input type="radio" name="zoom" value="normal"><span>Normal</span>
-          <small>Se nota sin molestar.</small></label>
-        <label><input type="radio" name="zoom" value="llamativo" checked><span>Llamativo</span>
-          <small>Entra y sale un 12% cada 4 segundos, sin parar. El encuadre no se
-            queda quieto nunca.</small></label>
-        <label><input type="radio" name="zoom" value="bestia"><span>Bestia</span>
-          <small>18% cada 3 segundos. Al máximo se come la barra de items.</small></label>
+        <label><input type="radio" name="zoom" value="simple"><span>Simple</span>
+          <small>Salta un 8%, cada 2 s más o menos.</small></label>
+        <label><input type="radio" name="zoom" value="mediano" checked><span>Mediano</span>
+          <small>Salta un 15%, cada 1,4 s más o menos.</small></label>
+        <label><input type="radio" name="zoom" value="extremo"><span>Extremo</span>
+          <small>Salta un 22%, cada segundo. Se come la barra de items.</small></label>
       </div>
     </div>
 

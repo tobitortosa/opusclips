@@ -1,103 +1,132 @@
 # -*- coding: utf-8 -*-
-"""Zoom continuo: el encuadre nunca se queda quieto.
+"""Zoom a saltos sobre el gameplay: tac, tac. Sin transicion.
 
 QUE ES
 ------
-Un vaiven de zoom que corre durante TODO el clip, independiente de los cortes.
-El ojo se va de un plano fijo; un encuadre que respira lo retiene. Es distinto
-del punch-in de `silencios.py`, que da un escalon FIJO por trozo y solo cambia
-cuando hay un corte: esto se mueve siempre, tambien en medio de una frase.
+El encuadre del GAMEPLAY salta entre dos o tres distancias durante todo el clip.
+No se desliza: salta. Se queda un segundo y medio en un plano, pega el salto al
+siguiente, se queda, vuelve. La camara no se toca.
 
-DONDE SE APLICA, Y POR QUE AHI
--------------------------------
-Despues de pegar los trozos y ANTES de quemar los subtitulos:
+POR QUE A SALTOS Y NO DESLIZANDO
+---------------------------------
+La primera version hacia un vaiven suave (dos senoidales). Se descarto por lo
+que pidio el usuario, y el motivo es correcto: *"la transicion suaviza y hace
+que se pierda la dopamina de la sorpresa"*. Un zoom que se desliza el ojo lo
+predice y deja de mirarlo; un salto seco no se puede predecir, y cada salto
+vuelve a pedir atencion. Es la misma logica del jump cut duro que ya usa el
+video en cada empalme.
 
-    [trozos] -> concat -> [vcat] -> ZOOM -> [vzm] -> ass -> [vo]
+Ademas resuelve gratis el problema que tenia el zoom suave: al deslizarse, el
+encuadre se movia menos de un pixel por frame y la grilla de pixeles enteros lo
+convertia en un escalonado (medido: a 4% en 7 segundos el escalon era el 100%
+del movimiento del frame). Con saltos no hay movimiento sub-pixel que cuantizar:
+cada tramo es un zoom fijo.
 
-Las dos cosas importan:
+POR QUE SOLO EL GAMEPLAY
+-------------------------
+Zoomear el canvas entero acerca tambien la webcam, y la cara no aguanta el
+tironeo: se lee como que se mueve la persona, no la edicion. El gameplay si -es
+donde pasa la accion y donde el salto se lee como "mira esto"-.
 
-- Despues del concat, porque cada trozo se corta con `setpts=PTS-STARTPTS` y su
-  tiempo vuelve a cero. Si el zoom se aplicara por trozo, en modo "sin respiro"
-  -que puede hacer 150 trozos en 35 segundos- el vaiven se reiniciaria 150
-  veces y quedaria un temblor, no un movimiento.
-- Antes del `ass`, porque si no el texto se agranda y se achica con la imagen.
-  Los subtitulos tienen que quedar clavados; lo unico que se mueve es el video.
+DONDE SE ENGANCHA, Y POR QUE ES ASI DE RARO
+--------------------------------------------
+El gameplay se compone ANTES de cortar los trozos, asi que ahi su reloj es el
+del stream original. Si el zoom se aplicara en esa rama, un salto programado
+para el segundo 10 podria caer en cualquier lado del clip final -o quedar
+directamente fuera, si ese pedazo se corto-. Por eso el panel se vuelve a
+separar DESPUES del concat, cuando el reloj ya es el del clip terminado:
 
-LA FORMA DEL MOVIMIENTO
------------------------
-No es una onda sola: son DOS sumadas, con periodos en proporcion aurea (0,618),
-que no es un numero racional. Dos ondas con periodos racionales vuelven a
-coincidir cada pocos segundos y el movimiento se vuelve predecible -se siente
-mecanico, "de plantilla"-. Con esta proporcion el ciclo no se repite nunca en la
-duracion de un clip, y el zoom se lee como decidido a mano.
+    [vcat] -> split -> recorte de arriba (camara, intacta) ------> [
+            \\-> recorte de abajo (gameplay) -> ZOOM A SALTOS -> [ vstack -> ass
 
-Arranca siempre en el minimo (`1-cos`, no `sin`): el clip abre en el plano mas
-abierto y entra. Al reves -abrir ya acercado y salir- el primer segundo se lee
-como que algo se aleja, que es exactamente lo contrario de retener.
-
-POR QUE ZOOMPAN Y NO OTRA COSA
--------------------------------
-`scale` no acepta expresiones que cambien por frame salvo con `eval=frame`, y
-combinado con un `crop` centrado cuantiza dos veces (el tamaño del escalado y el
-origen del recorte): medido, saltos de hasta 1,88 px. `zoompan` cuantiza una vez
-sola y cuesta 0,5 s por cada 10 s de video, contra 24 s que tarda el encode. Lo
-que no se puede evitar con NINGUN filtro es que el resultado caiga en una grilla
-de pixeles enteros: por eso un zoom MUY LENTO se ve escalonado -se queda quieto
-y pega un tiron de 1 px- y uno marcado no, porque el escalon queda tapado por el
-movimiento. Medido: a 4% en 7 segundos el escalon es el 100% del movimiento del
-frame; a 12% en 4 segundos pasa a ser una fraccion.
+Y todo eso antes del `ass`, para que los subtitulos y el cartel queden clavados
+y del mismo tamaño siempre.
 """
+import random
 
-# amplitud: cuanto acerca en el pico (0.12 = 12%)
-# ciclo:    segundos que tarda en ir y volver
+# amplitud: cuanto acerca en el plano mas cerrado (0.14 = 14%)
+# sostener:  (minimo, maximo) segundos que se queda en cada plano antes del salto
+# Tres modos, y NINGUNO tiene transicion: los tres son salto seco. Lo unico que
+# cambia entre ellos es cuanto acerca y cada cuanto salta.
 NIVELES = {
     "apagado": None,
-    "sutil": dict(amplitud=0.045, ciclo=7.0),
-    "normal": dict(amplitud=0.075, ciclo=5.5),
-    "llamativo": dict(amplitud=0.12, ciclo=4.0),
-    "bestia": dict(amplitud=0.18, ciclo=3.0),
+    "simple": dict(amplitud=0.08, sostener=(1.8, 2.8)),
+    "mediano": dict(amplitud=0.15, sostener=(1.0, 1.8)),
+    "extremo": dict(amplitud=0.22, sostener=(0.7, 1.2)),
 }
-NIVEL_DEFECTO = "llamativo"
+NIVEL_DEFECTO = "mediano"
 
-# Proporcion entre las dos ondas. 0,618 es irracional: nunca vuelven a coincidir.
-RELACION = 0.618
-PESO_PRINCIPAL = 0.65
+# Tres planos, no dos: con dos el vaiven se vuelve un interruptor y se predice
+# despues de tres saltos. El del medio rompe el patron sin costar nada.
+ESCALONES = (0.0, 0.55, 1.0)
 
 
-def expresion(amplitud, ciclo):
-    """La expresion de zoom para ffmpeg, en funcion de `time` (segundos de salida).
+def pasos(nivel, duracion, semilla=0):
+    """Los saltos del clip: lista de (segundo en que salta, zoom).
 
-    Vale entre 1 y 1+amplitud: las dos ondas van de 0 a 1 y los pesos suman 1.
+    Los tiempos NO son parejos a proposito. Un salto cada exactamente 1,5 s se
+    escucha como un metronomo y el ojo lo empieza a anticipar, que es justo lo
+    que se quiere evitar. La variacion es pseudoaleatoria pero determinista
+    -sembrada con el numero de clip-, asi que volver a renderizar el mismo clip
+    da exactamente el mismo resultado.
     """
-    t2 = ciclo * RELACION
-    a = f"(1-cos(2*PI*time/{ciclo:.4f}))/2"
-    b = f"(1-cos(2*PI*time/{t2:.4f}))/2"
-    return (f"1+{amplitud:.4f}*({PESO_PRINCIPAL}*{a}+{1 - PESO_PRINCIPAL:.2f}*{b})")
-
-
-def filtro(nivel, ancho, alto, fps, entrada, salida):
-    """El tramo de filtergraph que hace el vaiven. Cadena vacia si esta apagado."""
     cfg = NIVELES.get(nivel)
-    if not cfg or cfg["amplitud"] <= 0:
-        return ""
-    z = expresion(cfg["amplitud"], cfg["ciclo"])
-    # x/y centrados: zoompan los recalcula por frame a medida que cambia el zoom
-    return (f"[{entrada}]zoompan=z='{z}':d=1:"
-            f"x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':"
-            f"s={ancho}x{alto}:fps={fps}[{salida}];")
-
-
-def recorrido(nivel, fps=60, segundos=12.0):
-    """Los valores de zoom que va a tomar. Solo para tests y para inspeccionar."""
-    import math
-    cfg = NIVELES.get(nivel)
-    if not cfg:
+    if not cfg or duracion <= 0:
         return []
-    a, c = cfg["amplitud"], cfg["ciclo"]
-    out = []
-    for i in range(int(segundos * fps)):
-        t = i / fps
-        v = (PESO_PRINCIPAL * (1 - math.cos(2 * math.pi * t / c)) / 2
-             + (1 - PESO_PRINCIPAL) * (1 - math.cos(2 * math.pi * t / (c * RELACION))) / 2)
-        out.append(1 + a * v)
-    return out
+    rnd = random.Random(semilla * 7919 + 13)
+    lo, hi = cfg["sostener"]
+    # Arranca SIEMPRE en el plano mas abierto, para que el primer salto sea una
+    # entrada. Al reves -abrir cerrado y saltar hacia afuera- el arranque se lee
+    # como que algo se aleja, que es lo contrario de retener.
+    fuera, t, previo = [], 0.0, 1.0
+    while t < duracion:
+        opciones = [e for e in ESCALONES if e != previo]
+        # el plano abierto y el cerrado pesan mas que el del medio: el medio
+        # esta para romper el patron, no para ser el estado habitual
+        e = rnd.choices(opciones, weights=[1.0 if o != 0.55 else 0.45 for o in opciones])[0]
+        previo = e
+        fuera.append((round(t, 3), round(1.0 + cfg["amplitud"] * e, 4)))
+        t += rnd.uniform(lo, hi)
+    return fuera
+
+
+def expresion(pasos_):
+    """Los saltos, como expresion de ffmpeg en funcion de `time`.
+
+    Sale una cadena de `if` anidados. Con un clip de 35 s y saltos cada ~1,4 s
+    son unos 25 niveles, que ffmpeg evalua sin problema.
+    """
+    if not pasos_:
+        return "1"
+    e = f"{pasos_[-1][1]:.4f}"
+    # de atras para adelante: cada nivel tapa al anterior hasta su propio corte.
+    # `lt` estricto -> en el instante exacto del salto ya vale el zoom nuevo.
+    for (t, z), (t_sig, _) in zip(reversed(pasos_[:-1]), reversed(pasos_[1:])):
+        e = f"if(lt(time,{t_sig:.3f}),{z:.4f},{e})"
+    return e
+
+
+def filtro(nivel, duracion, ancho, alto, cam_alto, fps, entrada, salida, semilla=0):
+    """El tramo de filtergraph que hace los saltos. Cadena vacia si esta apagado.
+
+    `cam_alto` es la altura de la franja de camara, que queda INTACTA. Si es 0
+    -no hay camara: el gameplay ocupa todo- se zoomea el cuadro entero.
+    """
+    ps = pasos(nivel, duracion, semilla)
+    if not ps or all(z == 1.0 for _, z in ps):
+        return ""
+    z = expresion(ps)
+    game_alto = alto - cam_alto
+
+    zp = (f"zoompan=z='{z}':d=1:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':"
+          f"s={ancho}x{game_alto}:fps={fps}")
+
+    if not cam_alto:
+        return f"[{entrada}]{zp}[{salida}];"
+
+    # se vuelven a separar los dos paneles del cuadro ya pegado, se zoomea solo
+    # el de abajo y se re-apilan
+    return (f"[{entrada}]split=2[zcam][zgame];"
+            f"[zcam]crop={ancho}:{cam_alto}:0:0,setsar=1[zcamr];"
+            f"[zgame]crop={ancho}:{game_alto}:0:{cam_alto},{zp},setsar=1[zgamer];"
+            f"[zcamr][zgamer]vstack=inputs=2[{salida}];")
