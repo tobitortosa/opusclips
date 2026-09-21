@@ -399,6 +399,88 @@ def test_palabras_repetidas_por_el_cold_open():
     assert out[-1]["t"] == "NO"                          # y de nuevo en el clip
 
 
+# ------------------------------------------------- vaiven de zoom (core/zoom.py)
+# El encuadre se mueve durante TODO el clip. Lo que se testea: que el zoom se
+# quede dentro del rango prometido, que no se repita, y sobre todo DONDE se
+# engancha en el filtergraph -despues del concat y antes de los subtitulos-,
+# que es de lo que depende que el texto no se agrande con la imagen.
+
+def test_el_zoom_se_queda_en_el_rango_prometido():
+    from core import zoom
+    for nivel, cfg in zoom.NIVELES.items():
+        r = zoom.recorrido(nivel, segundos=60)
+        if cfg is None:
+            assert r == []
+            continue
+        assert min(r) >= 1.0 - 1e-6, f"{nivel} se aleja mas alla del plano original"
+        assert max(r) <= 1.0 + cfg["amplitud"] + 1e-6, f"{nivel} se pasa de la amplitud"
+        assert r[0] == min(r), "tiene que abrir en el plano mas abierto y entrar"
+
+
+def test_el_zoom_no_se_repite():
+    """Dos ondas en proporcion aurea: el movimiento no se repite.
+
+    Si se repitiera, se vuelve predecible y se lee como plantilla. La proporcion
+    aurea es el numero mas dificil de aproximar por una fraccion, o sea lo mas
+    lejos que se puede estar de un ciclo que vuelve. Aun asi hay CASI
+    coincidencias en los indices de Fibonacci -la mas cercana cae en el ciclo 8,
+    a los 32 segundos- y eso es irreducible: cualquier otra proporcion vuelve a
+    coincidir antes. Lo que se exige es que ninguna se acerque a menos del 5% de
+    la amplitud, que es la diferencia que ya no se percibe.
+    """
+    from core import zoom
+    amp = zoom.NIVELES["llamativo"]["amplitud"]
+    r = zoom.recorrido("llamativo", segundos=40)
+    c = int(zoom.NIVELES["llamativo"]["ciclo"] * 60)
+    primero = r[:c]
+    for k in range(1, len(r) // c):
+        dif = max(abs(a - b) for a, b in zip(primero, r[k * c:(k + 1) * c]))
+        assert dif > 0.05 * amp, f"el ciclo {k} repite el primero (difiere {dif:.4f})"
+
+
+def test_el_zoom_va_despues_del_concat_y_antes_de_los_subtitulos():
+    """El orden es lo unico que importa de verdad aca.
+
+    Si el zoom fuera ANTES del concat se reiniciaria en cada trozo (150 en modo
+    sin respiro) y seria un temblor. Si fuera DESPUES del `ass`, el texto se
+    agrandaria y achicaria con la imagen.
+    """
+    from core.render import construir_filtro
+    m = MapaTiempos([(0.0, 3.0), (5.0, 9.0), (12.0, 20.0)])
+    f = construir_filtro("x.ass", True, m, nivel_zoom="llamativo")
+    assert f.index("concat=") < f.index("zoompan"), "el zoom va despues de pegar los trozos"
+    assert f.index("zoompan") < f.index("ass=x.ass"), "y antes de quemar los subtitulos"
+    # el trozo de zoom toma [vcat] y entrega [vzm], que es lo que consume el ass
+    assert "[vcat]zoompan" in f and "[vzm]ass=x.ass" in f
+
+
+def test_sin_cortes_el_zoom_igual_se_aplica():
+    from core.render import construir_filtro
+    f = construir_filtro("x.ass", True, nivel_zoom="llamativo")
+    assert "[stack]zoompan" in f and "[vzm]ass=x.ass" in f
+
+
+def test_zoom_apagado_no_deja_rastro():
+    from core.render import construir_filtro
+    m = MapaTiempos([(0.0, 3.0), (5.0, 9.0)])
+    for nivel in (None, "apagado"):
+        f = construir_filtro("x.ass", True, m, nivel_zoom=nivel)
+        assert "zoompan" not in f
+        assert "[vcat]ass=x.ass" in f, "el ass tiene que tomar directo del concat"
+
+
+def test_punch_in_y_vaiven_no_se_encinan():
+    """Los dos zooms multiplicados dan un movimiento inestable.
+
+    El punch-in se apaga solo cuando hay vaiven; ya no hace falta que el ojo
+    registre el corte, porque el encuadre nunca esta quieto.
+    """
+    import inspect
+    from core import pipeline
+    src = inspect.getsource(pipeline.Trabajo._plan_clip)
+    assert "not zoom.NIVELES.get(self.nivel_zoom)" in src
+
+
 if __name__ == "__main__":
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())

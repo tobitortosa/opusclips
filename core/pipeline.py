@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from . import asr, audio, ff, gancho, momentos, render, silencios, subtitulos, sync
+from . import asr, audio, ff, gancho, momentos, render, silencios, subtitulos, sync, zoom
 from .config import (CLIP_MAX, DENSIDAD_MINIMA, DURACION_MINIMA_FINAL, SALIDA, TRABAJO)
 
 # Version del formato del cold open. Si sube, los ganchos guardados se recalculan
@@ -47,7 +47,8 @@ ETAPAS = [
 
 class Trabajo:
     def __init__(self, id_, pantalla, camara=None, n_clips=10, estilo="anton",
-                 cortar_silencios=True, nivel_silencio=None, gancho=True):
+                 cortar_silencios=True, nivel_silencio=None, gancho=True,
+                 nivel_zoom=None):
         self.id = id_
         self.pantalla = str(pantalla)
         self.camara = str(camara) if camara else None
@@ -56,6 +57,7 @@ class Trabajo:
         self.cortar_silencios = cortar_silencios
         self.nivel_silencio = nivel_silencio or silencios.NIVEL_DEFECTO
         self.gancho = gancho
+        self.nivel_zoom = nivel_zoom or zoom.NIVEL_DEFECTO
         self.dir = TRABAJO / id_
         self.dir.mkdir(parents=True, exist_ok=True)
         self.salida = SALIDA / id_
@@ -64,7 +66,8 @@ class Trabajo:
         self.estado = self._cargar() or dict(
             id=id_, creado=datetime.now().isoformat(timespec="seconds"),
             pantalla=self.pantalla, camara=self.camara, n_clips=self.n_clips,
-            estilo=estilo, fase="listo", mensaje="Esperando", progreso=0.0,
+            estilo=estilo, nivel_zoom=self.nivel_zoom,
+            fase="listo", mensaje="Esperando", progreso=0.0,
             clips=[], error=None, info={}, uso_llm=None,
         )
 
@@ -328,8 +331,14 @@ class Trabajo:
         m = silencios.MapaTiempos(conservar)
         if not m.hay_cortes:
             return None, pal, c["inicio"], False, None, None
-        punch = bool(silencios.NIVELES.get(
-            informe.get("nivel", self.nivel_silencio), {}).get("punch_in"))
+        # El punch-in da un escalon fijo por trozo; el vaiven mueve el encuadre
+        # todo el tiempo. Encimados los dos zooms se MULTIPLICAN (1,12 x 1,075 =
+        # 1,20 en el pico) y el movimiento se vuelve inestable, asi que cuando
+        # hay vaiven el punch-in se apaga: ya no hace falta que el ojo registre
+        # el corte, porque el encuadre nunca esta quieto.
+        punch = (not zoom.NIVELES.get(self.nivel_zoom)) and bool(
+            silencios.NIVELES.get(informe.get("nivel", self.nivel_silencio),
+                                  {}).get("punch_in"))
         c["duracion_final"] = round(m.duracion, 2)
         return m, m.mapear_palabras(pal), 0.0, punch, zoom_gancho, impacto_en
 
@@ -358,8 +367,8 @@ class Trabajo:
         render.renderizar(
             self.pantalla, self.camara, self.estado.get("offset_camara", 0.0),
             c["inicio"], c["duracion"], ass, destino, mapa=mapa, punch_in=punch,
-            zoom_gancho=zoom_g, impacto_en=impacto, cb=cb,
-            cancelado=lambda: self.cancelado)
+            zoom_gancho=zoom_g, impacto_en=impacto, nivel_zoom=self.nivel_zoom,
+            cb=cb, cancelado=lambda: self.cancelado)
         render.miniatura(destino, self.dir / f"{destino.stem}.jpg")
         c["estado"] = "listo"
         c["ruta"] = str(destino)

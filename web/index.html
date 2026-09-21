@@ -76,8 +76,8 @@
         <label><input type="radio" name="nivel" value="frenetico"><span>Frenético</span>
           <small>Corta desde un cuarto de segundo.</small></label>
         <label><input type="radio" name="nivel" value="maximo" checked><span>Sin respiro</span>
-          <small>Pega solo lo que hablás, corta hasta las pausas dentro de una
-            frase, y mueve el encuadre. El clip queda mucho más corto.</small></label>
+          <small>Pega solo lo que hablás y corta hasta las pausas dentro de una
+            frase. El clip queda mucho más corto.</small></label>
       </div>
     </div>
 
@@ -90,6 +90,23 @@
           de que el clip arranque. Dura 2 a 3 segundos: lo suficiente para entenderlo.</small>
       </span>
     </label>
+
+    <div class="campo" id="fila-zoom">
+      <label class="etiqueta" for="zoom">Movimiento de cámara</label>
+      <div class="opciones-nivel">
+        <label><input type="radio" name="zoom" value="apagado"><span>Quieto</span>
+          <small>Encuadre fijo.</small></label>
+        <label><input type="radio" name="zoom" value="sutil"><span>Sutil</span>
+          <small>Apenas respira.</small></label>
+        <label><input type="radio" name="zoom" value="normal"><span>Normal</span>
+          <small>Se nota sin molestar.</small></label>
+        <label><input type="radio" name="zoom" value="llamativo" checked><span>Llamativo</span>
+          <small>Entra y sale un 12% cada 4 segundos, sin parar. El encuadre no se
+            queda quieto nunca.</small></label>
+        <label><input type="radio" name="zoom" value="bestia"><span>Bestia</span>
+          <small>18% cada 3 segundos. Al máximo se come la barra de items.</small></label>
+      </div>
+    </div>
 
     <button id="btn-generar" class="principal">Generar clips</button>
     <p class="nota">Todo se procesa en tu máquina. Lo único que sale a internet es el texto

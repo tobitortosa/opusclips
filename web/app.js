@@ -105,6 +105,7 @@ $("#btn-generar").onclick = async () => {
         cortar_silencios: $("#silencios").checked,
         nivel_silencio: document.querySelector('input[name="nivel"]:checked').value,
         gancho: $("#gancho").checked,
+        nivel_zoom: document.querySelector("input[name=zoom]:checked").value,
       })
     });
     TID = r.id;

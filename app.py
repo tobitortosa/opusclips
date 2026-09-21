@@ -30,6 +30,7 @@ class NuevoTrabajo(BaseModel):
     cortar_silencios: bool = True
     nivel_silencio: str = "maximo"
     gancho: bool = True
+    nivel_zoom: str = "llamativo"
 
 
 class Cues(BaseModel):
@@ -146,11 +147,13 @@ def crear(t: NuevoTrabajo):
             raise HTTPException(409, "Ese stream ya se esta procesando.")
         trabajo = Trabajo(tid, t.pantalla, t.camara, t.n_clips, t.estilo,
                           cortar_silencios=t.cortar_silencios,
-                          nivel_silencio=t.nivel_silencio, gancho=t.gancho)
+                          nivel_silencio=t.nivel_silencio, gancho=t.gancho,
+                          nivel_zoom=t.nivel_zoom)
         trabajo.estado.update(n_clips=t.n_clips, estilo=t.estilo,
                               pantalla=t.pantalla, camara=t.camara,
                               cortar_silencios=t.cortar_silencios,
-                              nivel_silencio=t.nivel_silencio, gancho=t.gancho)
+                              nivel_silencio=t.nivel_silencio, gancho=t.gancho,
+                              nivel_zoom=t.nivel_zoom)
         trabajo.n_clips, trabajo.estilo = t.n_clips, t.estilo
         TRABAJOS[tid] = trabajo
     threading.Thread(target=trabajo.correr, daemon=True).start()

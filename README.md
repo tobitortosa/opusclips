@@ -23,6 +23,7 @@ core/
   momentos.py       elección de los mejores momentos (Claude Sonnet 5)
   gancho.py         cold open y cartel de cada clip (Claude Opus 5)
   silencios.py      corte de pausas y mapa de tiempos
+  zoom.py           vaivén de zoom continuo
   subtitulos.py     karaoke y cartel en formato ASS
   render.py         composición y exportación
   pipeline.py       orquestación de todo

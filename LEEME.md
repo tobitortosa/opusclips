@@ -117,10 +117,36 @@ de que use otra cuenta por accidente. La app te muestra arriba a la derecha los
   sin él, con 30 cortes, se escucharía un chasquido en cada uno. El video se corta
   seco, que es el jump cut que se busca.
 
-  **Punch-in**: en el modo Sin respiro, el encuadre alterna entre normal y un zoom del
-  7,5%, cambiando cada 1,6 segundos de metraje (no en cada corte: con 150 cortes sería
-  un parpadeo). No se percibe como efecto; se percibe como que el video no se queda
-  quieto nunca.
+- **El encuadre nunca se queda quieto.** Un vaivén de zoom que corre durante todo el
+  clip, independiente de los cortes: entra y sale sin parar. El ojo se va de un plano
+  fijo.
+
+| Nivel | Qué hace |
+|---|---|
+| Quieto | Encuadre fijo |
+| Sutil | 4,5% cada 7 s — apenas respira |
+| Normal | 7,5% cada 5,5 s |
+| **Llamativo** (por defecto) | **12% cada 4 s** |
+| Bestia | 18% cada 3 s — en el pico se come la barra de items |
+
+  **Por qué 4 segundos y no 2:** un ciclo de 2 segundos hace que el zoom cambie de
+  dirección cada segundo, y eso deja de leerse como movimiento y pasa a leerse como un
+  latido. En 30 segundos marea. Cuatro segundos es el punto donde nunca está quieto
+  pero tampoco pulsa.
+
+  **No es una onda, son dos**, con periodos en proporción áurea (0,618). Dos ondas con
+  periodos "redondos" vuelven a coincidir cada pocos segundos y el movimiento se hace
+  predecible —se siente de plantilla—. Con esta proporción no se repite en toda la
+  duración de un clip, y se lee como decidido a mano.
+
+  Va **después de pegar los trozos** (si no, con 150 cortes el vaivén se reiniciaría
+  150 veces y sería un temblor) y **antes de quemar los subtítulos** (si no, el texto
+  se agranda y se achica con la imagen). Cuesta 3,5 segundos por clip.
+
+  **El punch-in se apaga solo cuando el vaivén está activo.** Hacían el mismo trabajo y
+  encimados los dos zooms se multiplican (1,12 × 1,075 = 1,20 en el pico) y el
+  movimiento queda inestable. Ya no hace falta que el ojo registre cada corte, porque
+  el encuadre no está quieto nunca.
 
 ## Si algo no te gusta
 
@@ -149,6 +175,7 @@ core/
   reparar.py        arregla timestamps rotos de Whisper
   momentos.py       elección de los mejores momentos (Claude)
   silencios.py      corte de pausas y mapa de tiempos
+  zoom.py           vaiven de zoom continuo
   subtitulos.py     generación del karaoke en formato ASS
   render.py         composición y exportación
   pipeline.py       orquestación de todo
