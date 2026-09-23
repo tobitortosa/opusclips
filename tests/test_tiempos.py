@@ -368,6 +368,70 @@ def test_el_cartel_solo_dura_el_cold_open(tmp=None):
     assert "CARTEL,," not in open(d, encoding="utf-8-sig").read()
 
 
+def test_el_cartel_va_sobre_una_placa_opaca():
+    """Es lo PRIMERO que se ve del clip. Con contorno en vez de placa, el texto
+    blanco se empastaba con los fondos claros de Minecraft (cielo, arenisca).
+    `BorderStyle 3` es la placa; volver a 1 lo rompe sin que falle nada.
+    """
+    import os
+    import tempfile
+
+    from core.config import CARTEL_FUENTE, ESTILOS_SUB, ESTILO_SUB_DEFECTO
+    from core.subtitulos import escribir_ass
+    d = os.path.join(tempfile.gettempdir(), "cartel_placa.ass")
+    escribir_ass([], d, cartel="SE SUBASTO MI CABEZA", cartel_hasta=2.6)
+    lineas = open(d, encoding="utf-8-sig").read().splitlines()
+    # se lee por la cabecera Format y no por indice fijo: asi no se rompe si
+    # alguna vez cambia el orden de las columnas
+    campos = [c.strip() for c in
+              next(l for l in lineas if l.startswith("Format:")).split(":", 1)[1].split(",")]
+    vals = next(l for l in lineas if l.startswith("Style: CARTEL,")).split(",")
+    est = dict(zip(campos, [vals[0].split(":", 1)[1].strip()] + vals[1:]))
+    assert est["BorderStyle"] == "3", "BorderStyle tiene que ser 3 (placa)"
+    # y con una fuente distinta de la del karaoke: si usa la misma, el cartel se
+    # lee como "un subtitulo mas grande" y no como un cartel
+    assert est["Fontname"] == CARTEL_FUENTE
+    assert est["Fontname"] != ESTILOS_SUB[ESTILO_SUB_DEFECTO]["familia"]
+
+
+def test_el_barrido_de_entrada_termina_abierto():
+    """El cartel entra con un `\\clip` animado que va de ancho cero al cuadro
+    entero. Si el clip final quedara en cero, el cartel no se veria NUNCA y no
+    fallaria nada: saldria el clip entero sin gancho visual."""
+    import re
+
+    from core.config import ANCHO
+    from core.subtitulos import _lineas_cartel
+    linea = _lineas_cartel("QUE HICISTE", 2.6)[0]
+    ini = re.search(r"\\clip\((\d+),(\d+),(\d+),(\d+)\)", linea).groups()
+    assert int(ini[2]) - int(ini[0]) == 0, "tiene que arrancar tapado"
+    fin = re.findall(r"\\t\(\d+,\d+,\\clip\((\d+),(\d+),(\d+),(\d+)\)\)", linea)
+    assert fin, "falta la animacion del barrido"
+    assert int(fin[-1][2]) >= ANCHO, "tiene que terminar destapado del todo"
+
+
+def test_la_sombra_dura_cae_despues_del_barrido():
+    import re
+
+    from core.config import CARTEL_SOMBRA, CARTEL_WIPE
+    from core.subtitulos import _lineas_cartel
+    linea = _lineas_cartel("QUE HICISTE", 2.6)[0]
+    assert "\\shad0" in linea, "arranca sin sombra"
+    a, b, v = re.search(r"\\t\((\d+),(\d+),\\shad(\d+)\)", linea).groups()
+    assert int(v) == CARTEL_SOMBRA
+    assert int(a) >= CARTEL_WIPE * 1000 - 1, "la sombra no puede caer antes del barrido"
+    assert int(b) > int(a)
+
+
+def test_el_cartel_no_pisa_ni_la_camara_ni_los_subtitulos():
+    from core.config import CAM_ALTO, CARTEL_MARGEN_V
+    from core.subtitulos import alto_cartel
+    assert CARTEL_MARGEN_V >= CAM_ALTO, "arrancaria sobre la cara"
+    # 150 es el tope de escala de una sola linea; 118 el de dos
+    for escala in (100, 118, 150):
+        assert CARTEL_MARGEN_V + alto_cartel(escala) <= 1176, escala
+
+
 def test_el_golpe_de_audio_cae_en_el_corte():
     from core.render import construir_filtro
     m = MapaTiempos([(125.0, 127.6), (100.0, 110.0), (120.0, 130.0)])

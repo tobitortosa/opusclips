@@ -14,8 +14,10 @@ from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
-from .config import (ALTO, ANCHO, CARTEL_BORDE, CARTEL_COLOR, CARTEL_ESTILO,
-                     CARTEL_MARGEN_V, CARTEL_MAX_LINEAS, CARTEL_OUTLINE, CARTEL_SIZE,
+from .config import (ALTO, ANCHO, CARTEL_ALTO_FUENTE, CARTEL_FUENTE,
+                     CARTEL_MARGEN_V, CARTEL_MAX_LINEAS, CARTEL_PAD, CARTEL_PLACA,
+                     CARTEL_SIZE, CARTEL_SOMBRA, CARTEL_SOMBRA_COLOR,
+                     CARTEL_SOMBRA_EN, CARTEL_TEXTO, CARTEL_TTF, CARTEL_WIPE,
                      COLOR_ACTIVO, COLOR_BASE, ESTILOS_SUB, ESTILO_SUB_DEFECTO,
                      FUENTES, SUB_MARGEN, SUB_MARGEN_V)
 
@@ -92,7 +94,7 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: K,{familia},{size},&H00FFFFFF,&H00FFFFFF,&H00141414,&H64000000,0,0,0,0,100,100,0,0,1,{outline},{shadow},2,{mg},{mg},{mv},1
-Style: CARTEL,{cfam},{csize},{ccol},{ccol},{cbor},&H64000000,0,0,0,0,100,100,1,0,1,{cout},3,8,{cmg},{cmg},{cmv},1
+Style: CARTEL,{cfam},{csize},{ctex},{ctex},{cpla},{csom},0,0,0,0,100,100,1,0,3,{cpad},{cdes},8,{cmg},{cmg},{cmv},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -100,7 +102,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def _ancho_max():
-    return ANCHO - SUB_MARGEN - 2 * CARTEL_OUTLINE
+    """Lo que le queda al TEXTO, descontando la placa y la sombra dura."""
+    return ANCHO - SUB_MARGEN - 2 * CARTEL_PAD - CARTEL_SOMBRA
 
 
 def partir_cartel(texto, size=CARTEL_SIZE, max_lineas=CARTEL_MAX_LINEAS):
@@ -111,8 +114,7 @@ def partir_cartel(texto, size=CARTEL_SIZE, max_lineas=CARTEL_MAX_LINEAS):
     todos los puntos de corte y se elige el que deja la linea mas ancha lo mas
     angosta posible, que es lo que da el bloque compacto de TikTok.
     """
-    e = ESTILOS_SUB[CARTEL_ESTILO]
-    med = Medidor(FUENTES / e["ttf"], size)
+    med = Medidor(FUENTES / CARTEL_TTF, size)
     pal = texto.upper().split()
     if not pal:
         return []
@@ -133,27 +135,58 @@ def partir_cartel(texto, size=CARTEL_SIZE, max_lineas=CARTEL_MAX_LINEAS):
     return mejor
 
 
-def _lineas_cartel(texto, hasta):
-    """El cartel del cold open: entra con un golpe, se va con el corte.
+def alto_cartel(escala=100):
+    """Lo que ocupa el bloque del cartel, de su borde de arriba al de abajo.
 
-    El tamaño se ajusta para que el cartel LLENE el ancho. Sin esto un cartel
-    corto como "QUE HICISTE" ocupaba la mitad de la pantalla y se leia como un
-    subtitulo mas, que es justo lo contrario de lo que tiene que pasar.
+    Sirve para no tener que adivinar donde termina: con `ScaledBorderAndShadow`
+    la placa y la sombra escalan junto con el texto, asi que todo depende de la
+    misma escala.
+    """
+    k = escala / 100.0
+    alto_linea = CARTEL_SIZE * CARTEL_ALTO_FUENTE * k
+    return CARTEL_MAX_LINEAS * (alto_linea + 2 * CARTEL_PAD * k) + CARTEL_SOMBRA * k
+
+
+def _lineas_cartel(texto, hasta):
+    """El cartel del cold open. Es lo PRIMERO que ve el que scrollea.
+
+    Tres cosas lo hacen legible, y ninguna es el tamaño:
+
+    1. PLACA OPACA detras del texto (`BorderStyle 3`), no un contorno. El
+       contorno oscuro sobre texto blanco funciona mientras el fondo sea oscuro;
+       sobre un cielo de Minecraft o una pared de arena el texto se empasta. Una
+       placa no se mezcla con nada.
+    2. FUENTE PROPIA, distinta de la del karaoke. Con la misma tipografia el
+       cartel se lee como "un subtitulo mas grande" y no como un cartel.
+    3. Se ESCALA PARA LLENAR EL ANCHO. Sin esto, un cartel corto como
+       "QUE HICISTE" ocupaba la mitad de la pantalla.
+
+    Y entra en tres tiempos, que son tres golpes de atencion en el medio segundo
+    que decide si el que scrollea se queda: el texto se descubre de izquierda a
+    derecha, despues cae la sombra verde, y recien ahi queda quieto hasta el
+    corte. No hay salida: se corta seco, como todos los empalmes del clip.
     """
     lineas = partir_cartel(texto)
     if not lineas:
         return []
-    e = ESTILOS_SUB[CARTEL_ESTILO]
-    med = Medidor(FUENTES / e["ttf"], CARTEL_SIZE)
+    med = Medidor(FUENTES / CARTEL_TTF, CARTEL_SIZE)
     peor = max(med.ancho(l) for l in lineas)
-    tope = 150 if len(lineas) == 1 else 122     # con dos lineas, sin comerse la camara
+    tope = 150 if len(lineas) == 1 else 118     # con dos lineas, sin comerse la camara
     escala = max(70, min(tope, int(100 * _ancho_max() / peor))) if peor else 100
     txt = r"\N".join(l.replace("{", "(").replace("}", ")") for l in lineas)
-    # el \fad lo hace entrar rapido y el \t de arranque es el "golpe": aparece
-    # un 14% mas grande y se asienta en 110 ms. Es lo que lo hace leer como un
-    # cartel de TikTok y no como un subtitulo mas.
-    efecto = (r"{\fad(90,70)\fscx%d\fscy%d\t(0,110,\fscx%d\fscy%d)}"
-              % (int(escala * 1.14), int(escala * 1.14), escala, escala))
+
+    # El barrido se hace con un \clip rectangular animado. Va de ancho CERO al
+    # cuadro entero, y arranca en x=0 en vez de en el borde del texto a
+    # proposito: el rectangulo solo recorta ESTA linea de dialogo, asi que
+    # pasarse no rompe nada y evita depender de medir el bloque al pixel.
+    ini, fin = CARTEL_SOMBRA_EN
+    efecto = (
+        r"{\fscx%d\fscy%d\shad0"
+        r"\clip(0,0,0,%d)\t(0,%d,\clip(0,0,%d,%d))"
+        r"\t(%d,%d,\shad%d)}"
+        % (escala, escala, ALTO,
+           int(CARTEL_WIPE * 1000), ANCHO, ALTO,
+           int(ini * 1000), int(fin * 1000), CARTEL_SOMBRA))
     return ["Dialogue: 1,%s,%s,CARTEL,,0,0,0,,%s%s"
             % (_cs(0.0), _cs(hasta), efecto, txt)]
 
@@ -193,12 +226,12 @@ def escribir_ass(cues, destino, estilo=ESTILO_SUB_DEFECTO, t0=0.0, pop=True,
     if cartel and cartel_hasta > 0:
         lineas = _lineas_cartel(cartel, cartel_hasta) + lineas
 
-    ce = ESTILOS_SUB[CARTEL_ESTILO]
     cab = CABECERA.format(W=ANCHO, H=ALTO, familia=e["familia"], size=e["size"],
                           outline=e["outline"], shadow=e["shadow"], mg=SUB_MARGEN,
                           mv=SUB_MARGEN_V if margen_v is None else margen_v,
-                          cfam=ce["familia"], csize=CARTEL_SIZE, ccol=CARTEL_COLOR,
-                          cbor=CARTEL_BORDE, cout=CARTEL_OUTLINE, cmg=SUB_MARGEN // 2,
-                          cmv=CARTEL_MARGEN_V)
+                          cfam=CARTEL_FUENTE, csize=CARTEL_SIZE, ctex=CARTEL_TEXTO,
+                          cpla=CARTEL_PLACA, csom=CARTEL_SOMBRA_COLOR,
+                          cpad=CARTEL_PAD, cdes=CARTEL_SOMBRA,
+                          cmg=SUB_MARGEN // 2, cmv=CARTEL_MARGEN_V)
     Path(destino).write_text(cab + "\n".join(lineas) + "\n", encoding="utf-8-sig")
     return destino

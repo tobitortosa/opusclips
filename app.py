@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """Servidor local. Un solo proceso: sirve la UI y corre el pipeline."""
+import asyncio
 import json
 import re
 import subprocess
 import sys
 import threading
 import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -13,10 +15,46 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import config
+from core import config, memes
 from core.pipeline import Trabajo
 
-app = FastAPI(title="Maquina de clips")
+# Errores que NO son errores: el navegador corta la conexion a mitad y Windows
+# avisa. Pasa todo el tiempo con las previews de video de la grilla de clips
+# -cada `<video>` pide un trozo y despues aborta- y al recargar la pagina con el
+# sondeo de estado en vuelo.
+#
+# El traceback sale de `_ProactorBasePipeTransport._call_connection_lost`, en el
+# `finally` que hace `sock.shutdown()` sobre un socket que el otro lado ya
+# cerro. La conexion se estaba cerrando igual, asi que no se pierde nada.
+#
+# Se callan por una razon concreta, no por prolijidad: con cuatro tracebacks por
+# clip la ventana se llena de rojo, y un error DE VERDAD queda enterrado ahi
+# adentro sin que nadie lo vea. Por eso se filtran estas dos excepciones y NADA
+# mas: cualquier otra cosa sigue su camino al manejador de siempre.
+CORTES_DEL_NAVEGADOR = (ConnectionResetError, ConnectionAbortedError)
+
+
+def _callar_cortes(anterior):
+    """Devuelve un manejador de excepciones del bucle que ignora los cortes del
+    navegador y delega todo lo demas en `anterior` (o en el de siempre)."""
+    def manejador(bucle, ctx):
+        if isinstance(ctx.get("exception"), CORTES_DEL_NAVEGADOR):
+            return
+        if anterior is not None:
+            anterior(bucle, ctx)
+        else:
+            bucle.default_exception_handler(ctx)
+    return manejador
+
+
+@asynccontextmanager
+async def _vida(_app):
+    bucle = asyncio.get_running_loop()
+    bucle.set_exception_handler(_callar_cortes(bucle.get_exception_handler()))
+    yield
+
+
+app = FastAPI(title="Maquina de clips", lifespan=_vida)
 TRABAJOS = {}
 LOCK = threading.Lock()
 
@@ -31,6 +69,9 @@ class NuevoTrabajo(BaseModel):
     nivel_silencio: str = "maximo"
     gancho: bool = True
     nivel_zoom: str = "mediano"
+    nivel_memes: str = "medio"
+    estilo_memes: str = "crudo"
+    memes_mudos: bool = False
 
 
 class Cues(BaseModel):
@@ -94,6 +135,8 @@ def inicio():
         falta=falta,
         videos=_videos_cerca(),
         estilos=list(config.ESTILOS_SUB.keys()),
+        memes=len(memes.biblioteca()),
+        memes_sin_ficha=memes.faltantes(),
         trabajos=sorted([d.name for d in config.TRABAJO.iterdir() if d.is_dir()]),
     )
 
@@ -148,12 +191,14 @@ def crear(t: NuevoTrabajo):
         trabajo = Trabajo(tid, t.pantalla, t.camara, t.n_clips, t.estilo,
                           cortar_silencios=t.cortar_silencios,
                           nivel_silencio=t.nivel_silencio, gancho=t.gancho,
-                          nivel_zoom=t.nivel_zoom)
+                          nivel_zoom=t.nivel_zoom, nivel_memes=t.nivel_memes,
+                          estilo_memes=t.estilo_memes, memes_mudos=t.memes_mudos)
         trabajo.estado.update(n_clips=t.n_clips, estilo=t.estilo,
                               pantalla=t.pantalla, camara=t.camara,
                               cortar_silencios=t.cortar_silencios,
                               nivel_silencio=t.nivel_silencio, gancho=t.gancho,
-                              nivel_zoom=t.nivel_zoom)
+                              nivel_zoom=t.nivel_zoom, nivel_memes=t.nivel_memes,
+                              estilo_memes=t.estilo_memes, memes_mudos=t.memes_mudos)
         trabajo.n_clips, trabajo.estilo = t.n_clips, t.estilo
         TRABAJOS[tid] = trabajo
     threading.Thread(target=trabajo.correr, daemon=True).start()
@@ -167,8 +212,18 @@ def _obtener(tid):
             if not (config.TRABAJO / tid / "estado.json").exists():
                 raise HTTPException(404, "No existe ese trabajo.")
             d = json.loads((config.TRABAJO / tid / "estado.json").read_text(encoding="utf-8"))
+            # se reconstruye con TODAS sus opciones: si no, rehacer un clip
+            # de un trabajo viejo lo re-renderizaba con los valores por defecto
+            # (otro zoom, otro corte de silencios) y salia un video distinto
             t = Trabajo(tid, d["pantalla"], d.get("camara"), d.get("n_clips", 10),
-                        d.get("estilo", "anton"))
+                        d.get("estilo", "anton"),
+                        cortar_silencios=d.get("cortar_silencios", True),
+                        nivel_silencio=d.get("nivel_silencio"),
+                        gancho=d.get("gancho", True),
+                        nivel_zoom=d.get("nivel_zoom"),
+                        nivel_memes=d.get("nivel_memes"),
+                        estilo_memes=d.get("estilo_memes"),
+                        memes_mudos=d.get("memes_mudos", False))
             TRABAJOS[tid] = t
         return t
 

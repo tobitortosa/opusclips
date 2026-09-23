@@ -8,7 +8,7 @@ Sin camara: el gameplay va centrado sobre un fondo desenfocado de si mismo.
 import shutil
 from pathlib import Path
 
-from . import ff, zoom
+from . import ff, memes as memes_mod, zoom
 from .config import (ALTO, ANCHO, CADENA_AUDIO, CAM_ALTO, EQ_CAMARA, EQ_GAMEPLAY,
                      FFMPEG, FPS, FUENTES, GAME_ALTO, GAME_CROP_ANCHO, GAME_CROP_X,
                      IMPACTO, IMPACTO_ADELANTO, IMPACTO_VOLUMEN, X264_CRF, X264_PRESET)
@@ -58,7 +58,7 @@ def _mezcla_impacto(entrada, salida, en):
 
 def construir_filtro(ass_rel, con_camara, mapa=None, t0=0.0, punch_in=False,
                      zoom_gancho=None, impacto_en=None, nivel_zoom=None,
-                     duracion=0.0, semilla=0):
+                     duracion=0.0, semilla=0, memes=None, estilo_memes=None, memes_mudos=False):
     """`mapa` es un MapaTiempos si hay que sacar tiempos muertos, o None.
 
     Los cortes se aplican DESPUES de componer, sobre el video ya armado, y en el
@@ -77,26 +77,35 @@ def construir_filtro(ass_rel, con_camara, mapa=None, t0=0.0, punch_in=False,
         if impacto_en:
             golpe = _mezcla_impacto("acat", "amez", impacto_en)
             fuente = "amez"
-        saltos = zoom.filtro(nivel_zoom, duracion or mapa.duracion, ANCHO, ALTO,
+        dur = duracion or mapa.duracion
+        saltos = zoom.filtro(nivel_zoom, dur, ANCHO, ALTO,
                              CAM_ALTO if con_camara else 0, FPS, "vcat", "vzm", semilla)
+        v = "vzm" if saltos else "vcat"
+        stickers = memes_mod.filtro_video(memes, v, "vmm", con_camara, dur, FPS,
+                                          estilo_memes or memes_mod.ESTILO_DEFECTO)
+        mezcla = memes_mod.filtro_audio(memes, fuente, "amm")
         return (base +
                 mapa.filtro_concat("stack", "0:a", "vcat", "acat", t0=t0,
                                    punch_in=punch_in, ancho=ANCHO, alto=ALTO,
                                    fps=FPS, zoom_primero=zoom_gancho) +
-                golpe + saltos +
-                f"[{'vzm' if saltos else 'vcat'}]ass={ass_rel}:fontsdir=fonts[vo];"
-                f"[{fuente}]{CADENA_AUDIO}[ao]")
+                golpe + saltos + stickers + mezcla +
+                f"[{'vmm' if stickers else v}]ass={ass_rel}:fontsdir=fonts[vo];"
+                f"[{'amm' if mezcla else fuente}]{CADENA_AUDIO}[ao]")
     saltos = zoom.filtro(nivel_zoom, duracion, ANCHO, ALTO,
                          CAM_ALTO if con_camara else 0, FPS, "stack", "vzm", semilla)
-    return (base + saltos +
-            f"[{'vzm' if saltos else 'stack'}]ass={ass_rel}:fontsdir=fonts[vo];"
-            f"[0:a]{CADENA_AUDIO}[ao]")
+    v = "vzm" if saltos else "stack"
+    stickers = memes_mod.filtro_video(memes, v, "vmm", con_camara, duracion, FPS,
+                                  estilo_memes or memes_mod.ESTILO_DEFECTO)
+    mezcla = memes_mod.filtro_audio(memes, "0:a", "amm")
+    return (base + saltos + stickers + mezcla +
+            f"[{'vmm' if stickers else v}]ass={ass_rel}:fontsdir=fonts[vo];"
+            f"[{'amm' if mezcla else '0:a'}]{CADENA_AUDIO}[ao]")
 
 
 def renderizar(pantalla, camara, offset_cam, inicio, dur, ass, destino,
                cb=None, cancelado=None, crf=None, preset=None, mapa=None,
                punch_in=False, zoom_gancho=None, impacto_en=None, nivel_zoom=None,
-               semilla=0):
+               semilla=0, memes=None, estilo_memes=None, memes_mudos=False):
     """Renderiza un clip.
 
     ffmpeg corre con el cwd en la carpeta del .ass y usa rutas RELATIVAS para
@@ -125,6 +134,12 @@ def renderizar(pantalla, camara, offset_cam, inicio, dur, ass, destino,
     else:
         impacto_en = None
 
+    # los stickers y sus sonidos, tambien por ruta relativa (mismo motivo)
+    estilo_memes = estilo_memes or memes_mod.ESTILO_DEFECTO
+    memes = (memes_mod.preparar_archivos(list(memes), trabajo, estilo_memes, semilla,
+                                         mudo=memes_mudos)
+             if memes else [])
+
     con_cam = bool(camara)
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error",
            "-ss", f"{inicio:.3f}", "-t", f"{dur:.3f}", "-i", str(pantalla)]
@@ -141,7 +156,8 @@ def renderizar(pantalla, camara, offset_cam, inicio, dur, ass, destino,
     filtro = construir_filtro(ass.name, con_cam, mapa, t0=inicio, punch_in=punch_in,
                               zoom_gancho=zoom_gancho, impacto_en=impacto_en,
                               nivel_zoom=nivel_zoom, semilla=semilla,
-                              duracion=mapa.duracion if mapa is not None else dur)
+                              duracion=mapa.duracion if mapa is not None else dur,
+                              memes=memes, estilo_memes=estilo_memes)
     f_filtro = trabajo / f"{destino.stem}.filtro"
     f_filtro.write_text(filtro, encoding="utf-8")
 

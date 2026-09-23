@@ -108,9 +108,54 @@
       </div>
     </div>
 
+    <div class="campo" id="fila-memes">
+      <label class="etiqueta">Memes sobre el gameplay</label>
+      <p class="sub-etiqueta">La IA lee lo que se dice en cada clip y elige qué meme
+        pegar, en qué segundo exacto y con qué sonido. Aparecen de golpe sobre el
+        gameplay —nunca sobre tu cara ni sobre los subtítulos—, cambian de lugar cada
+        vez y se van enseguida. Los memes salen de la carpeta <code>stickers</code>:
+        si agregás una carpeta nueva con su PNG, avisame y le escribo la ficha.</p>
+      <div class="opciones-nivel">
+        <label><input type="radio" name="memes" value="apagado"><span>Sin memes</span>
+          <small>Nada. Solo el clip.</small></label>
+        <label><input type="radio" name="memes" value="poco"><span>Poquitos</span>
+          <small>Uno o dos por clip, solo en el momento más fuerte.</small></label>
+        <label><input type="radio" name="memes" value="medio" checked><span>Medio</span>
+          <small>Dos o tres por clip, en los mejores momentos.</small></label>
+        <label><input type="radio" name="memes" value="extremo"><span>Bastantes</span>
+          <small>Uno cada 5 o 6 s. Hasta 6 por clip.</small></label>
+      </div>
+    </div>
+
+    <div class="campo" id="fila-estilo-memes">
+      <label class="etiqueta">Cómo se ven los memes</label>
+      <p class="sub-etiqueta">Lo gracioso de estos videos es que están <b>mal editados</b>.
+        Un sticker con marco, sombra y rebote se ve prolijo, y lo prolijo le saca la gracia.</p>
+      <div class="opciones-nivel dos">
+        <label><input type="radio" name="estilo-memes" value="crudo" checked><span>Crudo</span>
+          <small>La foto sola, gigante, tapando el gameplay entero. Sin marco, sin sombra
+            y sin animación: aparece y desaparece de golpe. Es el que se ve peor, y por eso
+            es el que da risa.</small></label>
+        <label><input type="radio" name="estilo-memes" value="sticker"><span>Sticker</span>
+          <small>Chiquito en una esquina, con marco blanco, sombra, inclinado y entrando
+            con un rebote. Prolijo y ordenado.</small></label>
+      </div>
+    </div>
+
+    <label class="check" id="fila-memes-mudos">
+      <input id="memes-mudos" type="checkbox">
+      <span>
+        <b>Memes sin sonido</b>
+        <small>Los memes aparecen igual, pero ninguno trae su ruido: se escucha sólo
+          el audio del clip. Se puede prender y apagar sin volver a pagarle a la IA
+          —el plan de memes ya está hecho, sólo se rehace el video—.</small>
+      </span>
+    </label>
+
     <button id="btn-generar" class="principal">Generar clips</button>
     <p class="nota">Todo se procesa en tu máquina. Lo único que sale a internet es el texto
-      de la transcripción, para que la IA elija los mejores momentos (≈10 centavos por stream).</p>
+      de la transcripción: para elegir los mejores momentos, el cold open y los memes
+      (≈15 centavos por stream). Las imágenes y los sonidos nunca se suben.</p>
   </section>
 
   <!-- ══════════════════════════ PROGRESO ══════════════════════════ -->

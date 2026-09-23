@@ -10,6 +10,7 @@ FFMPEG = str(TOOLS / "ffmpeg.exe")
 FFPROBE = str(TOOLS / "ffprobe.exe")
 FUENTES = RAIZ / "assets" / "fonts"
 IMPACTO = RAIZ / "assets" / "impacto.wav"      # golpe en el corte del cold open
+STICKERS = RAIZ / "stickers"                   # biblioteca de memes (png + mp3)
 TRABAJO = RAIZ / "trabajo"
 SALIDA = RAIZ / "salida"
 WEB = RAIZ / "web"
@@ -130,22 +131,64 @@ MAX_TOKENS_GANCHO = 32000        # con streaming no hay riesgo de timeout
 # Existe porque el canal visual del cold open esta VACIO -se midio: en los 8
 # momentos de mayor energia del stream la cara esta neutra, mirando al monitor,
 # en un cuarto oscuro-. Si la imagen no gancha, el gancho hay que escribirlo.
-CARTEL_ESTILO = "anton"
-CARTEL_SIZE = 116
-CARTEL_OUTLINE = 9
+# Es lo PRIMERO que se ve del clip, asi que aca no se ahorra en legibilidad:
+# texto blanco sobre una PLACA opaca, con una sombra dura verde detras. El
+# borde-contorno no alcanzaba -sobre un gameplay claro el texto blanco con
+# contorno oscuro se sigue mezclando con el fondo-; una placa opaca no se
+# mezcla con nada, y es lo que usan todos los ganchos que funcionan.
+#
+# Fuente PROPIA, distinta de la de los subtitulos: si el cartel usa la misma
+# tipografia que el karaoke se lee como "un subtitulo mas grande" en vez de como
+# un cartel. Montserrat Black es geometrica y pesada, y sobre placa rinde mejor
+# que la condensada.
+CARTEL_FUENTE = "Montserrat Black"
+CARTEL_TTF = "Montserrat-Black.ttf"
+CARTEL_ALTO_FUENTE = 1.219       # (ascender - descender) / upem, medido del TTF
+CARTEL_SIZE = 104
+CARTEL_PAD = 22                  # respiro de la placa alrededor del texto
+CARTEL_SOMBRA = 9                # cuanto se corre la sombra dura
+# Placa BLANCA con texto casi negro, y no al reves. Probado sobre los dos
+# extremos del material: una cueva a oscuras y una pared de arenisca al sol. La
+# placa negra se empasta con la cueva y depende de la sombra para separarse; la
+# blanca revienta sobre la cueva y sobre la pared clara sigue separada. Tambien
+# se probo la placa verde de la marca: llama mas pero se lee mas barata, y
+# choca con el verde de la palabra activa del karaoke.
+CARTEL_TEXTO = "&H00101010"      # casi negro
+CARTEL_PLACA = "&H00F2F2F2"      # blanco (no puro: el 255 flota con la compresion)
+CARTEL_SOMBRA_COLOR = "&H0076E600"   # el verde de la marca (#00E676) en BBGGRR
+
 # Va JUSTO DEBAJO de la camara, no arriba de todo: probado arriba, cuando esta
 # sentado derecho la cara le queda en el tercio de arriba y el cartel se la tapa.
 # Debajo de la camara siempre cae sobre gameplay, y a un tercio de la altura
 # total sigue estando donde la gente mira primero.
-CARTEL_MARGEN_V = CAM_ALTO + 36
-CARTEL_COLOR = "&HFFFFFF&"
-CARTEL_BORDE = "&H141414&"
+CARTEL_MARGEN_V = CAM_ALTO + 40
 CARTEL_MAX_LINEAS = 2
+
+# La entrada, en tres tiempos: el texto se descubre de izquierda a derecha, la
+# sombra verde cae despues, y recien ahi queda quieto hasta el corte. Son tres
+# golpes de atencion en el medio segundo que decide si te quedas mirando.
+CARTEL_WIPE = 0.16               # el barrido de entrada
+CARTEL_SOMBRA_EN = (0.16, 0.30)  # cuando cae la sombra dura
 
 # Golpe de audio en el corte del cold open al clip. Sin el, el corte es mudo y
 # se pierde la mitad del efecto de "avance de pelicula".
 IMPACTO_VOLUMEN = 0.38
 IMPACTO_ADELANTO = 0.05          # cae 50 ms antes del corte, para que pegue justo
+
+# ---------------------------------------------------------------- los memes
+# Que meme va, en que segundo y con que sonido es una decision CULTURAL: el
+# perro resignado significa "estamos en el horno", no "perro". Eso no sale de
+# ningun detector, asi que lo decide Claude leyendo el clip ya montado, y con
+# el catalogo de fichas de memes.py como contexto. Es una llamada por stream y
+# lo que se juega es que el clip sea gracioso o quede barato: va Opus.
+MODELO_MEMES = "claude-opus-5"
+EFFORT_MEMES = "high"
+MAX_TOKENS_MEMES = 32000         # en extremo pueden salir ~90 memes de golpe
+
+# Volumen de los sonidos de meme. Se mezclan ANTES de la cadena de audio (como
+# el golpe del cold open) para que el loudnorm los mida y el clip siga a -14
+# LUFS; el precio es que el compresor tambien los ve, y por eso no van a 1.0.
+MEMES_VOLUMEN = 0.36
 
 # ---------------------------------------------------------------- entorno
 # OJO: la key de esta app es SIEMPRE la del .env de este proyecto, y se pasa

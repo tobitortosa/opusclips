@@ -14,6 +14,7 @@ const ETAPAS = [
   ["Detectando dónde hablás", 0.18],
   ["Transcribiendo el stream", 0.45],
   ["Eligiendo los mejores momentos", 0.55],
+  ["Eligiendo los memes", 0.58],
   ["Generando los clips", 1.00],
 ];
 
@@ -106,6 +107,9 @@ $("#btn-generar").onclick = async () => {
         nivel_silencio: document.querySelector('input[name="nivel"]:checked').value,
         gancho: $("#gancho").checked,
         nivel_zoom: document.querySelector("input[name=zoom]:checked").value,
+        nivel_memes: document.querySelector("input[name=memes]:checked").value,
+        estilo_memes: document.querySelector('input[name="estilo-memes"]:checked').value,
+        memes_mudos: $("#memes-mudos").checked,
       })
     });
     TID = r.id;
@@ -155,12 +159,14 @@ async function refrescar() {
   if (e.n_palabras) datos.push(`<b>${e.n_palabras.toLocaleString("es")}</b> palabras`);
   if (e.offset_camara) datos.push(`cámara corregida <b>${Math.round(e.offset_camara * 1000)} ms</b>`);
   if (e.uso_llm) {
-    const costo = (e.uso_llm.costo_usd || 0) + (e.uso_gancho?.costo_usd || 0);
+    const costo = (e.uso_llm.costo_usd || 0) + (e.uso_gancho?.costo_usd || 0)
+                + (e.uso_memes?.costo_usd || 0);
     datos.push(`IA: <b>$${costo.toFixed(3)}</b> en este stream`);
   }
   $("#datos-stream").innerHTML = datos.join("");
 
-  const avisos = [e.info?.aviso, e.info?.aviso_vfr, e.sync?.nota].filter(Boolean);
+  const avisos = [e.info?.aviso, e.info?.aviso_vfr, e.sync?.nota,
+                  e.aviso_gancho, e.aviso_memes].filter(Boolean);
   if (avisos.length)
     $("#datos-stream").innerHTML += avisos
       .map(a => `<div class="aviso" style="width:100%;margin:10px 0 0">${esc(a)}</div>`).join("");
@@ -209,6 +215,10 @@ function pintarClips(e) {
              c.gancho.por_que ? " · " + esc(c.gancho.por_que) : ""})</span></div>` : ""}
         ${c.gancho?.cartel ? `<div class="clip-porque" style="color:var(--amarillo)">
            🪧 cartel: <b>${esc(c.gancho.cartel)}</b></div>` : ""}
+        ${c.memes?.length ? `<div class="clip-porque" style="color:var(--celeste)">
+           🃏 ${c.memes.length} ${c.memes.length === 1 ? "meme" : "memes"}:
+           ${c.memes.map(m => `${esc(m.meme.replace(/_/g, " "))} <span style="opacity:.7">${m.t}s${
+             m.sonido ? " +" + esc(m.sonido) : ""}</span>`).join(" · ")}</div>` : ""}
         ${c.silencios?.cortes ? `<div class="clip-porque" style="color:var(--verde)">
            ${c.silencios.cortes} ${c.silencios.cortes === 1 ? "pausa sacada" : "pausas sacadas"}
            (${c.silencios.quitado}s, ${Math.round(c.silencios.proporcion * 100)}%)${

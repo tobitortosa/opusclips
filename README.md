@@ -22,6 +22,7 @@ core/
   reparar.py        arregla timestamps rotos de Whisper
   momentos.py       elección de los mejores momentos (Claude Sonnet 5)
   gancho.py         cold open y cartel de cada clip (Claude Opus 5)
+  memes.py          catálogo de memes y dónde va cada uno (Claude Opus 5)
   silencios.py      corte de pausas y mapa de tiempos
   zoom.py           zoom a saltos sobre el gameplay
   subtitulos.py     karaoke y cartel en formato ASS
@@ -29,7 +30,8 @@ core/
   pipeline.py       orquestación de todo
 web/                la interfaz
 scripts/            utilidades (genera el golpe de audio del cold open)
-tests/              tests del mapa de tiempos, la reparación y el gancho
+stickers/           biblioteca de memes: una carpeta por meme, con su PNG y su MP3
+tests/              tests del mapa de tiempos, la reparación, el gancho y los memes
 ```
 
 ## Para dejarlo andando en otra máquina

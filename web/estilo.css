@@ -1,7 +1,7 @@
 :root{
   --fondo:#0e1014; --panel:#171a21; --panel2:#1e222b; --borde:#2a2f3a;
   --texto:#e8eaf0; --suave:#9aa3b2; --verde:#00e676; --verde-osc:#00b85e;
-  --rojo:#ff5a5a; --amarillo:#ffc94d;
+  --rojo:#ff5a5a; --amarillo:#ffc94d; --celeste:#59c9ff;
 }
 *{box-sizing:border-box}
 body{
@@ -174,3 +174,5 @@ button.chico{padding:8px 14px; font-size:13px; width:auto}
   line-height: 1.45;
   color: var(--suave);
 }
+
+.opciones-nivel.dos{grid-template-columns:repeat(2,1fr)}

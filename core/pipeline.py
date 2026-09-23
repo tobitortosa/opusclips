@@ -12,13 +12,18 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from . import asr, audio, ff, gancho, momentos, render, silencios, subtitulos, sync, zoom
+from . import (asr, audio, ff, gancho, memes, momentos, render, silencios,
+               subtitulos, sync, zoom)
 from .config import (CLIP_MAX, DENSIDAD_MINIMA, DURACION_MINIMA_FINAL, SALIDA, TRABAJO)
 
 # Version del formato del cold open. Si sube, los ganchos guardados se recalculan
 # en vez de reusarse: es lo que evita que un proyecto viejo se quede para siempre
 # con ganchos del formato anterior.
 VERSION_GANCHO = 2
+
+# Lo mismo para el plan de memes: si cambia el catalogo o el formato, los
+# planes guardados se recalculan en vez de reusarse.
+VERSION_MEMES = 1
 
 
 def _gancho_de(clip):
@@ -41,6 +46,7 @@ ETAPAS = [
     ("voz", "Detectando donde hablas", 0.18),
     ("transcribir", "Transcribiendo", 0.45),
     ("elegir", "Eligiendo los mejores momentos", 0.55),
+    ("memes", "Eligiendo los memes", 0.58),
     ("renderizar", "Generando los clips", 1.00),
 ]
 
@@ -48,7 +54,7 @@ ETAPAS = [
 class Trabajo:
     def __init__(self, id_, pantalla, camara=None, n_clips=10, estilo="anton",
                  cortar_silencios=True, nivel_silencio=None, gancho=True,
-                 nivel_zoom=None):
+                 nivel_zoom=None, nivel_memes=None, estilo_memes=None, memes_mudos=False):
         self.id = id_
         self.pantalla = str(pantalla)
         self.camara = str(camara) if camara else None
@@ -58,6 +64,10 @@ class Trabajo:
         self.nivel_silencio = nivel_silencio or silencios.NIVEL_DEFECTO
         self.gancho = gancho
         self.nivel_zoom = nivel_zoom or zoom.NIVEL_DEFECTO
+        self.nivel_memes = nivel_memes or memes.NIVEL_DEFECTO
+        self.estilo_memes = estilo_memes or memes.ESTILO_DEFECTO
+        self.memes_mudos = bool(memes_mudos)
+        self._planes = {}
         self.dir = TRABAJO / id_
         self.dir.mkdir(parents=True, exist_ok=True)
         self.salida = SALIDA / id_
@@ -67,6 +77,8 @@ class Trabajo:
             id=id_, creado=datetime.now().isoformat(timespec="seconds"),
             pantalla=self.pantalla, camara=self.camara, n_clips=self.n_clips,
             estilo=estilo, nivel_zoom=self.nivel_zoom,
+            nivel_memes=self.nivel_memes, estilo_memes=self.estilo_memes,
+            memes_mudos=self.memes_mudos,
             fase="listo", mensaje="Esperando", progreso=0.0,
             clips=[], error=None, info={}, uso_llm=None,
         )
@@ -133,6 +145,7 @@ class Trabajo:
             self._analizar_audio()
             self._transcribir()
             self._elegir()
+            self._elegir_memes()
             self._renderizar()
             self._avisar(f"Listo: {len(self.estado['clips'])} clips", 1.0, "terminado")
         except Cancelado:
@@ -294,12 +307,23 @@ class Trabajo:
     def _plan_clip(self, c, palabras, tramos, pcm):
         """Arma el montaje de un clip: que tramos quedan, con cold open y todo.
 
-        Devuelve (mapa, palabras_remapeadas, t0_subtitulos, punch_in, zoom_gancho,
+        Devuelve (mapa, palabras, t0_subtitulos, punch_in, zoom_gancho,
         impacto_en). `mapa` es None si el clip va entero, sin cortes.
+
+        Las palabras SIEMPRE salen en el reloj del clip (arrancando en 0), haya
+        cortes o no, y por eso `t0_subtitulos` siempre es 0. Antes no: cuando el
+        clip iba entero salian en el reloj del stream y el desfase se arreglaba
+        pasandole `t0=inicio` a `escribir_ass`. Eso dejaba los `cues` guardados
+        en DOS bases de tiempo distintas segun como se hubiera renderizado, y
+        como el render reusa los cues guardados, alcanzaba con volver a correr
+        el mismo stream cambiando "sacar los tiempos muertos" para que el clip
+        saliera SIN NINGUN SUBTITULO -los cues quedaban en el minuto 74 de un
+        clip de 35 segundos-. Paso de verdad: en el proyecto del 2026-09-11, 6
+        de los 9 clips tenian los cues en el reloj del stream.
         """
         pal = [w for w in palabras if w["b"] > c["inicio"] and w["a"] < c["fin"]]
         if not self.cortar_silencios:
-            return None, pal, c["inicio"], False, None, None
+            return None, _correr(pal, c["inicio"]), 0.0, False, None, None
 
         # Si al cortar fuerte el clip queda demasiado corto para publicar, se
         # afloja un escalon y se vuelve a intentar. Asi el modo frenetico no
@@ -330,7 +354,7 @@ class Trabajo:
 
         m = silencios.MapaTiempos(conservar)
         if not m.hay_cortes:
-            return None, pal, c["inicio"], False, None, None
+            return None, _correr(pal, c["inicio"]), 0.0, False, None, None
         # El punch-in da un escalon fijo por trozo; el vaiven mueve el encuadre
         # todo el tiempo. Encimados los dos zooms se MULTIPLICAN (1,12 x 1,075 =
         # 1,20 en el pico) y el movimiento se vuelve inestable, asi que cuando
@@ -342,6 +366,81 @@ class Trabajo:
         c["duracion_final"] = round(m.duracion, 2)
         return m, m.mapear_palabras(pal), 0.0, punch, zoom_gancho, impacto_en
 
+    def _plan(self, c):
+        """El montaje del clip, calculado una sola vez.
+
+        Se cachea porque ahora hay DOS etapas que lo necesitan: la eleccion de
+        memes -que trabaja sobre el reloj del clip ya cortado- y el render. Es
+        deterministico, asi que cachearlo no cambia nada; recalcularlo si:
+        `planificar()` recorre el audio entero del clip.
+        """
+        if c["n"] not in self._planes:
+            palabras, tramos, pcm = self._material()
+            self._planes[c["n"]] = self._plan_clip(c, palabras, tramos, pcm)
+        return self._planes[c["n"]]
+
+    # ------------------------------------------------------------- memes
+    def _elegir_memes(self):
+        """Que meme aparece, en que segundo y con que sonido, en cada clip.
+
+        Va DESPUES de elegir los ganchos y ANTES de renderizar, porque necesita
+        el clip ya montado: los memes se colocan sobre el reloj del clip
+        terminado -con los tiempos muertos ya sacados y el cold open ya pegado
+        adelante-. Colocarlos sobre el reloj del stream original seria apuntarle
+        a un remate que en el clip final esta en otro segundo, o que directamente
+        se corto.
+
+        Igual que con el gancho: un fallo NO se cachea. Se avisa, el stream sale
+        sin memes esta vez, y al volver a correr se reintenta.
+        """
+        if not memes.NIVELES.get(self.nivel_memes) or not self.estado["clips"]:
+            return
+        self._chequear()
+        f = self.dir / "memes.json"
+        datos = None
+        if f.exists():
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+                if (d.get("version") == VERSION_MEMES
+                        and d.get("nivel") == self.nivel_memes
+                        and d.get("estilo") == self.estilo_memes
+                        and d.get("planes")):
+                    datos = d
+            except Exception:
+                datos = None
+
+        if datos is None:
+            palabras, tramos, _ = self._material()
+            fichas = []
+            for c in self.estado["clips"]:
+                mapa, pal, _, _, _, impacto = self._plan(c)
+                dur = mapa.duracion if mapa is not None else c["duracion"]
+                fichas.append(dict(
+                    n=c["n"], titulo=c.get("titulo", ""), duracion_final=dur,
+                    desde=impacto or 0.0,
+                    guion=memes.guion(pal, _reacciones(c, mapa, palabras, tramos), dur)))
+            try:
+                datos = memes.elegir(fichas, self.nivel_memes, self.estilo_memes,
+                                     cb=lambda m, p: self._avisar(m, 0.56))
+            except Exception as e:
+                self.estado["aviso_memes"] = f"No pude elegir los memes: {e}"
+                self._avisar("Sigo sin memes: " + str(e)[:120], 0.58)
+                return
+            if datos.get("planes"):
+                f.write_text(json.dumps(
+                    dict(version=VERSION_MEMES, nivel=self.nivel_memes,
+                         estilo=self.estilo_memes,
+                         planes={str(k): v for k, v in datos["planes"].items()},
+                         uso=datos.get("uso")), ensure_ascii=False), encoding="utf-8")
+
+        self.estado.pop("aviso_memes", None)
+        planes = datos.get("planes") or {}
+        for c in self.estado["clips"]:
+            c["memes"] = planes.get(str(c["n"])) or planes.get(c["n"]) or []
+        self.estado["uso_memes"] = datos.get("uso")
+        n = sum(len(c.get("memes") or []) for c in self.estado["clips"])
+        self._avisar(f"{n} memes repartidos en {len(self.estado['clips'])} clips", 0.58)
+
     def _render_clip(self, c, cues=None, cb=None):
         """Compone y exporta UN clip. Lo usan el render normal y el rehacer.
 
@@ -349,11 +448,15 @@ class Trabajo:
         el clip crudo, asi que corregir una palabra del subtitulo te devolvia un
         clip sin cold open, sin corte de silencios y sin punch-in -otro video-.
         """
-        palabras, tramos, pcm = self._material()
-        mapa, pal, t0_sub, punch, zoom_g, impacto = self._plan_clip(c, palabras, tramos, pcm)
+        mapa, pal, t0_sub, punch, zoom_g, impacto = self._plan(c)
 
         if cues is not None:
             c["cues"] = cues
+        elif not _cues_del_clip(c.get("cues"), mapa.duracion if mapa is not None
+                                else c["duracion"]):
+            # guardados de otro montaje (otro nivel de corte, o de antes de que
+            # los cues se normalizaran al reloj del clip): se recalculan
+            c.pop("cues", None)
         cues = c.get("cues") or subtitulos.armar_cues(pal, self.estilo)
         c["cues"] = cues
 
@@ -368,7 +471,9 @@ class Trabajo:
             self.pantalla, self.camara, self.estado.get("offset_camara", 0.0),
             c["inicio"], c["duracion"], ass, destino, mapa=mapa, punch_in=punch,
             zoom_gancho=zoom_g, impacto_en=impacto, nivel_zoom=self.nivel_zoom,
-            semilla=c["n"], cb=cb, cancelado=lambda: self.cancelado)
+            semilla=c["n"], memes=c.get("memes"), estilo_memes=self.estilo_memes,
+            memes_mudos=self.memes_mudos, cb=cb,
+            cancelado=lambda: self.cancelado)
         render.miniatura(destino, self.dir / f"{destino.stem}.jpg")
         c["estado"] = "listo"
         c["ruta"] = str(destino)
@@ -380,7 +485,7 @@ class Trabajo:
         n = len(clips) or 1
         for i, c in enumerate(clips):
             self._chequear()
-            base, tramo = 0.55, 0.45 / n
+            base, tramo = 0.58, 0.42 / n
             if c.get("estado") == "listo" and (self.salida / c["archivo"]).exists():
                 continue
             self._avisar(f"Clip {i+1} de {n}: {c.get('titulo','')}", base + tramo * i)
@@ -425,3 +530,42 @@ def _recortar(clips, n):
     orden = sorted(clips, key=lambda c: -c.get("puntaje", 0))[:n]
     orden.sort(key=lambda c: c["inicio"])
     return orden
+
+
+def _reacciones(c, mapa, palabras, tramos):
+    """Los tramos de risa/grito del clip, en el reloj del clip ya montado.
+
+    Son los huecos donde el detector de voz oye algo y el transcriptor no
+    escribio nada -el mismo detector que usa el cold open-. Se los pasa por
+    `mapear_palabras` como si fueran palabras, y no por `mapear`, porque el cold
+    open repite un pedazo del clip al principio: un mismo tramo del original
+    puede aparecer DOS veces en el clip final, y las dos son buenas para un meme.
+    """
+    pal = [w for w in palabras if w["b"] > c["inicio"] and w["a"] < c["fin"]]
+    huecos = gancho._huecos_sin_palabras(tramos, pal, c["inicio"], c["fin"])
+    if mapa is None:
+        return [(a - c["inicio"], b - c["inicio"]) for a, b in huecos]
+    falsas = [dict(a=a, b=b, t="") for a, b in huecos]
+    return [(w["a"], w["b"]) for w in mapa.mapear_palabras(falsas, min_dur=0.15)]
+
+
+def _correr(palabras, t0):
+    """Las palabras pasadas al reloj del clip: se les resta el inicio."""
+    return [dict(w, a=round(w["a"] - t0, 3), b=round(w["b"] - t0, 3)) for w in palabras]
+
+
+def _cues_del_clip(cues, duracion):
+    """True si estos cues son de ESTE montaje (estan dentro del clip).
+
+    Es la red contra reusar cues de otro reloj. Un cue que arranca en el
+    segundo 4.494 de un clip de 35 segundos no es un subtitulo corrido: es un
+    subtitulo que no se va a ver nunca.
+    """
+    if not cues:
+        return False
+    try:
+        a = min(w["a"] for cue in cues for w in cue)
+        b = max(w["b"] for cue in cues for w in cue)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return -1.0 <= a and b <= duracion + 5.0
